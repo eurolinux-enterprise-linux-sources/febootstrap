@@ -7,6 +7,10 @@ febootstrap-supermin-helper - Reconstruct initramfs from supermin appliance.
  febootstrap-supermin-helper supermin.img hostfiles.txt host_cpu kernel initrd
  febootstrap-supermin-helper input [...] host_cpu kernel initrd
 
+ febootstrap-supermin-helper -f ext2 input [...] host_cpu kernel initrd appliance
+
+ febootstrap-supermin-helper -f checksum input [...] host_cpu
+
 =head1 DESCRIPTION
 
 I<febootstrap-supermin-helper> reconstructs a bootable kernel and
@@ -16,8 +20,8 @@ L<febootstrap-to-supermin(8)>.
 
 =head1 PARAMETERS
 
-Of the four or five required parameters, the first few are I<input>
-files, and the last two are I<output> files.
+Of the required parameters, the first few are I<input> files, and the
+last two or three are I<output> files.
 
 C<supermin.img> and C<hostfiles.txt> are the input files which
 describe the supermin appliance.  (You can also use a directory name
@@ -25,13 +29,52 @@ here which is searched for files).
 
 C<host_cpu> should be the host CPU, eg. C<x86_64> or C<i686>.
 
-C<kernel> and C<initrd> are the temporary output files that this
-script produces.  These output files are meant to be used just for
-booting the appliance, and should be deleted straight afterwards.
+C<kernel>, C<initrd> and C<appliance> are the temporary output files
+that this script produces.  These output files are meant to be used
+just for booting the appliance, and should be deleted straight
+afterwards.  The extra C<appliance> parameter is only required when
+the format is C<ext2>.  None of these parameters are needed for
+the checksum output C<-f checksum>.
 
 =head1 OPTIONS
 
 =over 4
+
+=item B<-f fmt> | B<--format fmt>
+
+Select the output format for the appliance.  Possible formats are:
+
+=over 4
+
+=item cpio
+
+A Linux initramfs.  This is the default.
+
+In this case you have to supply names for the C<kernel>
+and C<initrd>, where the C<initrd> is the appliance.
+
+=item ext2
+
+An ext2 filesystem.
+
+In this case you have to supply names for the C<kernel>, a small
+C<initrd> which is used just to locate the appliance, and the
+C<appliance> (the ext2 filesystem).
+
+=item checksum
+
+Output a checksum.
+
+This prints a checksum which only changes when one of the input files
+changes.
+
+You can use this in order to cache the output of a previous run of
+this program: computing the checksum is much quicker than building an
+appliance, and you only need to invalidate the cache (and consequently
+rebuild the appliance) when the checksum changes.  Note that the
+host_cpu and the UID of the current user are included in the checksum.
+
+=back
 
 =item B<-k file> | B<--kmods file>
 
@@ -50,6 +93,19 @@ automatically.
 If this option is not specified, then every kernel module from the
 host will be included.  This is safer, but can produce rather large
 appliances which need a lot more memory to boot.
+
+=item B<-u user> | B<--user user> | B<-g group> | B<--group group>
+
+Run febootstrap-supermin-helper as an alternate user and/or group.
+C<user> and C<group> can be specified as either a name, which will
+be resolved using the system name service, or a uid/gid.  Use of these
+options requires root privileges.
+
+Use of these options is required if running febootstrap-supermin-helper
+as root with the effective uid/gid set to non-root.  Bash will reset
+the effective uid/gid to the real uid/gid when invoked.  As
+febootstrap-supermin-helper uses bash in parts, this will result in the
+creation of an appliance with a mixture of ownerships.
 
 =back
 

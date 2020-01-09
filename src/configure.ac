@@ -17,7 +17,7 @@ dnl Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 dnl
 dnl Written by Richard W.M. Jones <rjones@redhat.com>
 
-AC_INIT(febootstrap,2.7)
+AC_INIT(febootstrap,2.11)
 AM_INIT_AUTOMAKE
 
 dnl Check for basic C environment.
@@ -58,6 +58,29 @@ if test "x$YUM" = "xno" ; then
   AC_MSG_FAILURE([yum program not found])
 fi
 
+AC_PATH_PROG([MKE2FS],[mke2fs],[no])
+if test "x$MKE2FS" = "xno" ; then
+  AC_MSG_FAILURE([mke2fs program not found (is /sbin in your current path?)])
+fi
+AC_DEFINE_UNQUOTED([MKE2FS],["$MKE2FS"],
+  [Full path to the mke2fs program.])
+
+old_LIBS="$LIBS"
+AC_CHECK_LIB([com_err],[error_message],[],[
+  AC_MSG_FAILURE([com_err library not found (part of e2fsprogs)])
+])
+LIBS="$old_LIBS"
+
+old_LIBS="$LIBS"
+AC_CHECK_LIB([ext2fs],[ext2fs_file_open2],[],[
+  AC_MSG_FAILURE([libext2fs library not found (part of e2fsprogs)])
+])
+LIBS="$old_LIBS"
+
+AC_CHECK_HEADER([ext2fs/ext2fs.h],[],[
+  AC_MSG_FAILURE([Header <ext2fs/ext2fs.h> not found (part of e2fsprogs)])
+])
+
 AC_CONFIG_HEADERS([config.h])
-AC_CONFIG_FILES([lib/Makefile Makefile examples/Makefile])
+AC_CONFIG_FILES([Makefile lib/Makefile helper/Makefile examples/Makefile])
 AC_OUTPUT

@@ -13,14 +13,14 @@
 
 m4_ifndef([AC_AUTOCONF_VERSION],
   [m4_copy([m4_PACKAGE_VERSION], [AC_AUTOCONF_VERSION])])dnl
-m4_if(m4_defn([AC_AUTOCONF_VERSION]), [2.65],,
-[m4_warning([this file was generated for autoconf 2.65.
+m4_if(m4_defn([AC_AUTOCONF_VERSION]), [2.66],,
+[m4_warning([this file was generated for autoconf 2.66.
 You have another version of autoconf.  It may work, but is not guaranteed to.
 If you have problems, you may need to regenerate the build system entirely.
 To do so, use the procedure documented by the package, typically `autoreconf'.])])
 
-# po.m4 serial 15 (gettext-0.17)
-dnl Copyright (C) 1995-2007 Free Software Foundation, Inc.
+# po.m4 serial 17 (gettext-0.18)
+dnl Copyright (C) 1995-2010 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -38,7 +38,7 @@ dnl Authors:
 dnl   Ulrich Drepper <drepper@cygnus.com>, 1995-2000.
 dnl   Bruno Haible <haible@clisp.cons.org>, 2000-2003.
 
-AC_PREREQ(2.50)
+AC_PREREQ([2.50])
 
 dnl Checks for all prerequisites of the po subdirectory.
 AC_DEFUN([AM_PO_SUBDIRS],
@@ -50,7 +50,7 @@ AC_DEFUN([AM_PO_SUBDIRS],
 
   dnl Release version of the gettext macros. This is used to ensure that
   dnl the gettext macros and po/Makefile.in.in are in sync.
-  AC_SUBST([GETTEXT_MACRO_VERSION], [0.17])
+  AC_SUBST([GETTEXT_MACRO_VERSION], [0.18])
 
   dnl Perform the following tests also if --disable-nls has been given,
   dnl because they are needed for "make dist" to work.
@@ -62,7 +62,7 @@ AC_DEFUN([AM_PO_SUBDIRS],
     [$ac_dir/$ac_word --statistics /dev/null >&]AS_MESSAGE_LOG_FD[ 2>&1 &&
      (if $ac_dir/$ac_word --statistics /dev/null 2>&1 >/dev/null | grep usage >/dev/null; then exit 1; else exit 0; fi)],
     :)
-  AC_PATH_PROG(GMSGFMT, gmsgfmt, $MSGFMT)
+  AC_PATH_PROG([GMSGFMT], [gmsgfmt], [$MSGFMT])
 
   dnl Test whether it is GNU msgfmt >= 0.15.
 changequote(,)dnl
@@ -1436,6 +1436,7 @@ AC_SUBST([am__untar])
 
 m4_include([m4/00gnulib.m4])
 m4_include([m4/alloca.m4])
+m4_include([m4/asm-underscore.m4])
 m4_include([m4/chdir-long.m4])
 m4_include([m4/chown.m4])
 m4_include([m4/cloexec.m4])
@@ -1466,6 +1467,7 @@ m4_include([m4/getcwd-abort-bug.m4])
 m4_include([m4/getcwd-path-max.m4])
 m4_include([m4/getcwd.m4])
 m4_include([m4/getdtablesize.m4])
+m4_include([m4/getopt.m4])
 m4_include([m4/gnulib-common.m4])
 m4_include([m4/gnulib-comp.m4])
 m4_include([m4/hash.m4])
@@ -1473,6 +1475,8 @@ m4_include([m4/i-ring.m4])
 m4_include([m4/include_next.m4])
 m4_include([m4/inline.m4])
 m4_include([m4/intmax_t.m4])
+m4_include([m4/inttypes-pri.m4])
+m4_include([m4/inttypes.m4])
 m4_include([m4/inttypes_h.m4])
 m4_include([m4/lchown.m4])
 m4_include([m4/longlong.m4])
@@ -1508,6 +1512,7 @@ m4_include([m4/strdup.m4])
 m4_include([m4/strerror.m4])
 m4_include([m4/string_h.m4])
 m4_include([m4/sys_stat_h.m4])
+m4_include([m4/sys_wait_h.m4])
 m4_include([m4/time_h.m4])
 m4_include([m4/unistd-safer.m4])
 m4_include([m4/unistd_h.m4])
@@ -1522,4 +1527,5 @@ m4_include([m4/write.m4])
 m4_include([m4/xalloc.m4])
 m4_include([m4/xgetcwd.m4])
 m4_include([m4/xsize.m4])
+m4_include([m4/xstrtol.m4])
 m4_include([m4/xvasprintf.m4])

@@ -12,7 +12,8 @@
 # This file represents the compiled summary of the specification in
 # gnulib-cache.m4. It lists the computed macro invocations that need
 # to be invoked from configure.ac.
-# In projects using CVS, this file can be treated like other built files.
+# In projects that use version control, this file can be treated like
+# other built files.
 
 
 # This macro should be invoked from ./configure.ac, in the section
@@ -62,6 +63,8 @@ AC_DEFUN([gl_EARLY],
   # Code from module full-write:
   # Code from module getcwd:
   # Code from module getdtablesize:
+  # Code from module getopt-gnu:
+  # Code from module getopt-posix:
   # Code from module gettext-h:
   # Code from module hash:
   # Code from module hash-pjw:
@@ -69,6 +72,7 @@ AC_DEFUN([gl_EARLY],
   # Code from module include_next:
   # Code from module inline:
   # Code from module intprops:
+  # Code from module inttypes:
   # Code from module lchown:
   # Code from module lstat:
   # Code from module malloc-posix:
@@ -105,6 +109,7 @@ AC_DEFUN([gl_EARLY],
   # Code from module strerror:
   # Code from module string:
   # Code from module sys_stat:
+  # Code from module sys_wait:
   # Code from module time:
   # Code from module unistd:
   # Code from module unistd-safer:
@@ -119,6 +124,7 @@ AC_DEFUN([gl_EARLY],
   # Code from module xalloc-die:
   # Code from module xgetcwd:
   # Code from module xsize:
+  # Code from module xstrtol:
   # Code from module xvasprintf:
 ])
 
@@ -219,6 +225,11 @@ AC_DEFUN([gl_INIT],
   # Code from module getdtablesize:
   gl_FUNC_GETDTABLESIZE
   gl_UNISTD_MODULE_INDICATOR([getdtablesize])
+  # Code from module getopt-gnu:
+  gl_FUNC_GETOPT_GNU
+  gl_MODULE_INDICATOR_FOR_TESTS([getopt-gnu])
+  # Code from module getopt-posix:
+  gl_FUNC_GETOPT_POSIX
   # Code from module gettext-h:
   AC_SUBST([LIBINTL])
   AC_SUBST([LTLIBINTL])
@@ -231,6 +242,8 @@ AC_DEFUN([gl_INIT],
   # Code from module inline:
   gl_INLINE
   # Code from module intprops:
+  # Code from module inttypes:
+  gl_INTTYPES_H
   # Code from module lchown:
   gl_FUNC_LCHOWN
   gl_UNISTD_MODULE_INDICATOR([lchown])
@@ -305,6 +318,9 @@ AC_DEFUN([gl_INIT],
   # Code from module sys_stat:
   gl_HEADER_SYS_STAT_H
   AC_PROG_MKDIR_P
+  # Code from module sys_wait:
+  gl_SYS_WAIT_H
+  AC_PROG_MKDIR_P
   # Code from module time:
   gl_HEADER_TIME_H
   # Code from module unistd:
@@ -336,6 +352,8 @@ AC_DEFUN([gl_INIT],
   gl_XGETCWD
   # Code from module xsize:
   gl_XSIZE
+  # Code from module xstrtol:
+  gl_XSTRTOL
   # Code from module xvasprintf:
   gl_XVASPRINTF
   m4_ifdef([AM_XGETTEXT_OPTION],
@@ -539,6 +557,10 @@ AC_DEFUN([gl_FILE_LIST], [
   lib/full-write.h
   lib/getcwd.c
   lib/getdtablesize.c
+  lib/getopt.c
+  lib/getopt.in.h
+  lib/getopt1.c
+  lib/getopt_int.h
   lib/gettext.h
   lib/hash-pjw.c
   lib/hash-pjw.h
@@ -547,6 +569,7 @@ AC_DEFUN([gl_FILE_LIST], [
   lib/i-ring.c
   lib/i-ring.h
   lib/intprops.h
+  lib/inttypes.in.h
   lib/lchown.c
   lib/lstat.c
   lib/malloc.c
@@ -593,6 +616,7 @@ AC_DEFUN([gl_FILE_LIST], [
   lib/string.in.h
   lib/stripslash.c
   lib/sys_stat.in.h
+  lib/sys_wait.in.h
   lib/time.in.h
   lib/unistd--.h
   lib/unistd-safer.h
@@ -612,10 +636,15 @@ AC_DEFUN([gl_FILE_LIST], [
   lib/xgetcwd.h
   lib/xmalloc.c
   lib/xsize.h
+  lib/xstrtol-error.c
+  lib/xstrtol.c
+  lib/xstrtol.h
+  lib/xstrtoul.c
   lib/xvasprintf.c
   lib/xvasprintf.h
   m4/00gnulib.m4
   m4/alloca.m4
+  m4/asm-underscore.m4
   m4/chdir-long.m4
   m4/chown.m4
   m4/cloexec.m4
@@ -646,12 +675,15 @@ AC_DEFUN([gl_FILE_LIST], [
   m4/getcwd-path-max.m4
   m4/getcwd.m4
   m4/getdtablesize.m4
+  m4/getopt.m4
   m4/gnulib-common.m4
   m4/hash.m4
   m4/i-ring.m4
   m4/include_next.m4
   m4/inline.m4
   m4/intmax_t.m4
+  m4/inttypes-pri.m4
+  m4/inttypes.m4
   m4/inttypes_h.m4
   m4/lchown.m4
   m4/longlong.m4
@@ -687,6 +719,7 @@ AC_DEFUN([gl_FILE_LIST], [
   m4/strerror.m4
   m4/string_h.m4
   m4/sys_stat_h.m4
+  m4/sys_wait_h.m4
   m4/time_h.m4
   m4/unistd-safer.m4
   m4/unistd_h.m4
@@ -701,5 +734,6 @@ AC_DEFUN([gl_FILE_LIST], [
   m4/xalloc.m4
   m4/xgetcwd.m4
   m4/xsize.m4
+  m4/xstrtol.m4
   m4/xvasprintf.m4
 ])
