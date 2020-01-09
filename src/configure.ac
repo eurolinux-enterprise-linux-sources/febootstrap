@@ -1,5 +1,5 @@
 dnl febootstrap configure.ac
-dnl (C) Copyright 2009-2010 Red Hat Inc.
+dnl (C) Copyright 2009-2011 Red Hat Inc.
 dnl
 dnl This program is free software; you can redistribute it and/or modify
 dnl it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@ dnl Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 dnl
 dnl Written by Richard W.M. Jones <rjones@redhat.com>
 
-AC_INIT(febootstrap,2.11)
+AC_INIT(febootstrap,3.12)
 AM_INIT_AUTOMAKE
 
 dnl Check for basic C environment.
@@ -37,30 +37,63 @@ AC_SYS_LARGEFILE
 
 gl_INIT
 
+# Define $(SED).
+AC_PROG_SED
+
+# OCaml and ocamlfind are required to compile.
+AC_PROG_OCAML
+if test "$OCAMLC" = "no"; then
+    AC_MSG_ERROR([You must install the OCaml compiler])
+fi
+AM_CONDITIONAL([HAVE_OCAMLOPT],[test "$OCAMLBEST" = "opt"])
+AC_PROG_FINDLIB
+if test "$OCAMLFIND" = "no"; then
+    AC_MSG_ERROR([You must install OCaml findlib (the ocamlfind command)])
+fi
+
+dnl Optional programs.
 AC_CHECK_PROG(PERLDOC,[perldoc],[perldoc],[no])
 if test "x$PERLDOC" = "xno" ; then
   AC_MSG_WARN([perldoc not found - install perl to make man pages])
 fi
 AM_CONDITIONAL(HAVE_PERLDOC,[test "$perldoc" != "no"])
 
-AC_CHECK_PROG(FAKEROOT,[fakeroot],[fakeroot],[no])
-if test "x$FAKEROOT" = "xno" ; then
-  AC_MSG_FAILURE([fakeroot program not found])
-fi
-
-AC_CHECK_PROG(FAKECHROOT,[fakechroot],[fakechroot],[no])
-if test "x$FAKECHROOT" = "xno" ; then
-  AC_MSG_FAILURE([fakechroot program not found])
-fi
-
+dnl For yum-rpm handler.
 AC_CHECK_PROG(YUM,[yum],[yum],[no])
-if test "x$YUM" = "xno" ; then
-  AC_MSG_FAILURE([yum program not found])
-fi
+AC_CHECK_PROG(RPM,[rpm],[rpm],[no])
+AC_CHECK_PROG(YUMDOWNLOADER,[yumdownloader],[yumdownloader],[no])
 
-AC_PATH_PROG([MKE2FS],[mke2fs],[no])
+dnl For Debian handler.
+AC_CHECK_PROG(APTITUDE,[aptitude],[aptitude],[no])
+AC_CHECK_PROG(APT_CACHE,[apt-cache],[apt-cache],[no])
+AC_CHECK_PROG(DPKG,[dpkg],[dpkg],[no])
+
+dnl Include workaround for broken apt-cache depends --recurse (Ubuntu 10.04)?
+if test "x$APT_CACHE" != "xno"; then
+    AC_MSG_CHECKING([if apt-cache depends --recurse is broken])
+    if ! $APT_CACHE depends --recurse -i bash | grep -q '^libc6$'; then
+        AC_MSG_RESULT([yes])
+        APT_CACHE_DEPENDS_RECURSE_BROKEN=true
+    else
+        AC_MSG_RESULT([no])
+        APT_CACHE_DEPENDS_RECURSE_BROKEN=false
+    fi
+else
+    APT_CACHE_DEPENDS_RECURSE_BROKEN=false
+fi
+AC_SUBST([APT_CACHE_DEPENDS_RECURSE_BROKEN])
+
+dnl For ArchLinux handler.
+AC_CHECK_PROG(PACMAN,[pacman],[pacman],[no])
+
+dnl Support for gzipped kernel modules.
+AC_CHECK_LIB([z],[gzopen])
+
+dnl Required programs, libraries.
+AC_PATH_PROG([MKE2FS],[mke2fs],[no],
+             [$PATH$PATH_SEPARATOR/sbin$PATH_SEPARATOR])
 if test "x$MKE2FS" = "xno" ; then
-  AC_MSG_FAILURE([mke2fs program not found (is /sbin in your current path?)])
+  AC_MSG_FAILURE([mke2fs program not found])
 fi
 AC_DEFINE_UNQUOTED([MKE2FS],["$MKE2FS"],
   [Full path to the mke2fs program.])
@@ -75,12 +108,23 @@ old_LIBS="$LIBS"
 AC_CHECK_LIB([ext2fs],[ext2fs_file_open2],[],[
   AC_MSG_FAILURE([libext2fs library not found (part of e2fsprogs)])
 ])
+AC_CHECK_FUNCS([ext2fs_close2])
 LIBS="$old_LIBS"
 
 AC_CHECK_HEADER([ext2fs/ext2fs.h],[],[
   AC_MSG_FAILURE([Header <ext2fs/ext2fs.h> not found (part of e2fsprogs)])
 ])
 
+AC_CHECK_PROG(GAWK,[gawk],[gawk],[no])
+if test "x$GAWK" = "xno" ; then
+  AC_MSG_FAILURE([gawk (GNU awk) not found])
+fi
+
 AC_CONFIG_HEADERS([config.h])
-AC_CONFIG_FILES([Makefile lib/Makefile helper/Makefile examples/Makefile])
+AC_CONFIG_FILES([Makefile
+        debian/changelog
+        helper/Makefile
+        lib/Makefile
+        src/config.ml
+        src/Makefile])
 AC_OUTPUT

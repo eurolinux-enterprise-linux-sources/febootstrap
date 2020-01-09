@@ -15,8 +15,7 @@ febootstrap-supermin-helper - Reconstruct initramfs from supermin appliance.
 
 I<febootstrap-supermin-helper> reconstructs a bootable kernel and
 initramfs from a supermin appliance.  First you should be familiar
-with L<febootstrap(8)>, L<febootstrap-to-initramfs(8)> and
-L<febootstrap-to-supermin(8)>.
+with L<febootstrap(8)>.
 
 =head1 PARAMETERS
 
@@ -40,7 +39,9 @@ the checksum output C<-f checksum>.
 
 =over 4
 
-=item B<-f fmt> | B<--format fmt>
+=item B<-f fmt>
+
+=item B<--format fmt>
 
 Select the output format for the appliance.  Possible formats are:
 
@@ -76,7 +77,9 @@ host_cpu and the UID of the current user are included in the checksum.
 
 =back
 
-=item B<-k file> | B<--kmods file>
+=item B<-k file>
+
+=item B<--kmods file>
 
 If this option is specified, then C<file> should be a list of
 wildcards matching kernel module names, eg:
@@ -94,7 +97,13 @@ If this option is not specified, then every kernel module from the
 host will be included.  This is safer, but can produce rather large
 appliances which need a lot more memory to boot.
 
-=item B<-u user> | B<--user user> | B<-g group> | B<--group group>
+=item B<-u user>
+
+=item B<--user user>
+
+=item B<-g group>
+
+=item B<--group group>
 
 Run febootstrap-supermin-helper as an alternate user and/or group.
 C<user> and C<group> can be specified as either a name, which will
@@ -129,17 +138,39 @@ list the kernel modules you really need.
 
 Minimize the appliance, removing as much extraneous junk as possible.
 
-As well as using L<febootstrap-minimize(8)> it is worth checking for
-anything that is not necessary for your particular application and
-removing it by hand.
+=back
+
+=head1 ENVIRONMENT VARIABLES
+
+=over 4
+
+=item FEBOOTSTRAP_KERNEL
+
+If this environment variable is set, then automatic selection of the
+kernel is bypassed and this kernel is used.
+
+The environment variable should point to a kernel file,
+eg. C</boot/vmlinuz-3.0.x86_64>
+
+The corresponding module path is guessed from the kernel name, but you
+can override that by setting C<FEBOOTSTRAP_MODULES>.
+
+=item FEBOOTSTRAP_MODULES
+
+If C<FEBOOTSTRAP_KERNEL> and C<FEBOOTSTRAP_MODULES> are both set, then
+automatic selection of the kernel is bypassed and the kernel and
+module path are set to these values.
+
+The environment variable should point to a module directory,
+eg. C</lib/modules/3.0.x86_64/>
+
+This has no effect if C<FEBOOTSTRAP_KERNEL> is not set.
 
 =back
 
 =head1 SEE ALSO
 
-L<febootstrap(8)>,
-L<febootstrap-to-initramfs(8)>,
-L<febootstrap-to-supermin(8)>.
+L<febootstrap(8)>.
 
 =head1 AUTHORS
 
@@ -147,7 +178,7 @@ Richard W.M. Jones <rjones @ redhat . com>
 
 =head1 COPYRIGHT
 
-(C) Copyright 2009-2010 Red Hat Inc.,
+(C) Copyright 2009-2011 Red Hat Inc.,
 L<http://people.redhat.com/~rjones/febootstrap>.
 
 This program is free software; you can redistribute it and/or modify

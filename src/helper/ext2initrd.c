@@ -1,5 +1,5 @@
 /* febootstrap-supermin-helper reimplementation in C.
- * Copyright (C) 2009-2010 Red Hat Inc.
+ * Copyright (C) 2009-2011 Red Hat Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,6 +26,8 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <errno.h>
+#include <assert.h>
+#include <fnmatch.h>
 
 #include "error.h"
 #include "full-write.h"
@@ -37,7 +39,10 @@
 
 static void read_module_deps (const char *modpath);
 static void free_module_deps (void);
-static const char *get_module_dep (const char *);
+static void add_module_dep (const char *name, const char *dep);
+static struct module * add_module (const char *name);
+static struct module * find_module (const char *name);
+static void print_module_load_order (FILE *f, FILE *pp, struct module *m);
 
 /* The init binary. */
 extern char _binary_init_start, _binary_init_end, _binary_init_size;
@@ -47,21 +52,36 @@ extern char _binary_init_start, _binary_init_end, _binary_init_size;
  * ext2 filesystem on it.
  */
 static const char *kmods[] = {
-  "ext2.ko",
-  "virtio*.ko",
-  "ide*.ko",
-  "libata*.ko",
-  "piix*.ko",
-  "scsi_transport_spi.ko",
-  "scsi_mod.ko",
-  "sd_mod.ko",
-  "sym53c8xx.ko",
-  "ata_piix.ko",
-  "sr_mod.ko",
-  "mbcache.ko",
-  "crc*.ko",
-  "libcrc*.ko",
+  "ext2.ko*",
+  "ext4.ko*", /* CONFIG_EXT4_USE_FOR_EXT23=y option might be set */
+  "virtio*.ko*",
+  "ide*.ko*",
+  "libata*.ko*",
+  "piix*.ko*",
+  "scsi_transport_spi.ko*",
+  "scsi_mod.ko*",
+  "sd_mod.ko*",
+  "sym53c8xx.ko*",
+  "ata_piix.ko*",
+  "sr_mod.ko*",
+  "mbcache.ko*",
+  "crc*.ko*",
+  "libcrc*.ko*",
   NULL
+};
+
+/* Module dependencies. */
+struct module {
+  struct module *next;
+  struct moddep *deps;
+  char *name;
+  int visited;
+};
+struct module *modules = NULL;
+
+struct moddep {
+  struct moddep *next;
+  struct module *dep;
 };
 
 void
@@ -71,86 +91,42 @@ ext2_make_initrd (const char *modpath, const char *initrd)
   if (mkdtemp (dir) == NULL)
     error (EXIT_FAILURE, errno, "mkdtemp");
 
-  char *cmd;
-  int r;
-
-  /* Copy kernel modules into tmpdir. */
-  size_t n = strlen (modpath) + strlen (dir) + 64;
-  size_t i;
-  for (i = 0; kmods[i] != NULL; ++i)
-    n += strlen (kmods[i]) + 16;
-  cmd = malloc (n);
-  sprintf (cmd, "find '%s' ", modpath);
-  for (i = 0; kmods[i] != NULL; ++i) {
-    if (i > 0) strcat (cmd, "-o ");
-    strcat (cmd, "-name '");
-    strcat (cmd, kmods[i]);
-    strcat (cmd, "' ");
-  }
-  strcat (cmd, "| xargs cp -t ");
-  strcat (cmd, dir);
-  if (verbose >= 2) fprintf (stderr, "%s\n", cmd);
-  r = system (cmd);
-  if (r == -1 || WEXITSTATUS (r) != 0)
-    error (EXIT_FAILURE, 0, "ext2_make_initrd: copy kmods failed");
-  free (cmd);
-
-  /* The above command effectively gives us the final list of modules.
-   * Calculate dependencies from modpath/modules.dep and write that
-   * into the output.
-   */
   read_module_deps (modpath);
-
-  cmd = xasprintf ("tsort > %s/modules", dir);
-  if (verbose >= 2) fprintf (stderr, "%s\n", cmd);
-  FILE *pp = popen (cmd, "w");
-  if (pp == NULL)
-    error (EXIT_FAILURE, errno, "tsort: failed to create modules list");
-
-  DIR *dr = opendir (dir);
-  if (dr == NULL)
-    error (EXIT_FAILURE, errno, "opendir: %s", dir);
-
-  struct dirent *d;
-  while ((errno = 0, d = readdir (dr)) != NULL) {
-    size_t n = strlen (d->d_name);
-    if (n >= 3 &&
-        d->d_name[n-3] == '.' &&
-        d->d_name[n-2] == 'k' &&
-        d->d_name[n-1] == 'o') {
-      const char *dep = get_module_dep (d->d_name);
-      if (dep)
-        /* Reversed so that tsort will print the final list in the
-         * order that it has to be loaded.
-         */
-        fprintf (pp, "%s %s\n", dep, d->d_name);
+  add_module ("");
+  for (int i = 0; kmods[i] != NULL; ++i) {
+    for (struct module *m = modules; m; m = m->next) {
+      char *n = strrchr (m->name, '/');
+      if (n)
+        n += 1;
       else
-        /* No dependencies, just make it depend on itself so that
-         * tsort prints it.
-         */
-        fprintf (pp, "%s %s\n", d->d_name, d->d_name);
+        n = m->name;
+      if (fnmatch (kmods[i], n, FNM_PATHNAME) == 0) {
+        if (verbose >= 2)
+          fprintf (stderr, "Adding top-level dependency %s (%s)\n", m->name, kmods[i]);
+        add_module_dep ("", m->name);
+      }
     }
   }
-  if (errno)
-    error (EXIT_FAILURE, errno, "readdir: %s", dir);
 
-  if (closedir (dr) == -1)
-    error (EXIT_FAILURE, errno, "closedir: %s", dir);
+  char *cmd = xasprintf ("cd %s; xargs cp -t %s", modpath, dir);
+  char *outfile = xasprintf ("%s/modules", dir);
+  if (verbose >= 2) fprintf (stderr, "writing to %s\n", cmd);
 
-  if (pclose (pp) == -1)
-    error (EXIT_FAILURE, errno, "pclose: %s", cmd);
+  FILE *f = fopen (outfile, "w");
+  if (f == NULL)
+    error (EXIT_FAILURE, errno, "failed to create modules list (%s)", outfile);
+  FILE *pp = popen (cmd, "w");
+  if (pp == NULL)
+    error (EXIT_FAILURE, errno, "failed to create pipe (%s)", cmd);
+
+  /* The "pseudo" module depends on all modules matched by the contents of kmods */
+  struct module *pseudo = find_module ("");
+  print_module_load_order (pp, f, pseudo);
+  fclose (pp);
+  pclose (f);
 
   free (cmd);
   free_module_deps ();
-
-  /* Copy in insmod static binary. */
-  cmd = xasprintf ("cp /sbin/insmod.static %s", dir);
-  if (verbose >= 2) fprintf (stderr, "%s\n", cmd);
-  r = system (cmd);
-  if (r == -1 || WEXITSTATUS (r) != 0)
-    error (EXIT_FAILURE, 0,
-           "ext2_make_initrd: copy /sbin/insmod.static failed");
-  free (cmd);
 
   /* Copy in the init program, linked into this program as a data blob. */
   char *init = xasprintf ("%s/init", dir);
@@ -158,7 +134,7 @@ ext2_make_initrd (const char *modpath, const char *initrd)
   if (fd == -1)
     error (EXIT_FAILURE, errno, "open: %s", init);
 
-  n = (size_t) &_binary_init_size;
+  size_t n = (size_t) &_binary_init_size;
   if (full_write (fd, &_binary_init_start, n) != n)
     error (EXIT_FAILURE, errno, "write: %s", init);
 
@@ -172,7 +148,7 @@ ext2_make_initrd (const char *modpath, const char *initrd)
                    " | cpio --quiet -o -H newc) > '%s'",
                    dir, initrd);
   if (verbose >= 2) fprintf (stderr, "%s\n", cmd);
-  r = system (cmd);
+  int r = system (cmd);
   if (r == -1 || WEXITSTATUS (r) != 0)
     error (EXIT_FAILURE, 0, "ext2_make_initrd: cpio failed");
   free (cmd);
@@ -184,21 +160,11 @@ ext2_make_initrd (const char *modpath, const char *initrd)
   free (cmd);
 }
 
-/* Module dependencies. */
-struct moddep {
-  struct moddep *next;
-  char *name;
-  char *dep;
-};
-struct moddep *moddeps = NULL;
-
-static void add_module_dep (const char *name, const char *dep);
-
 static void
 free_module_deps (void)
 {
   /* Short-lived program, don't bother to free it. */
-  moddeps = NULL;
+  modules = NULL;
 }
 
 /* Read modules.dep into internal structure. */
@@ -210,7 +176,7 @@ read_module_deps (const char *modpath)
   char *filename = xasprintf ("%s/modules.dep", modpath);
   FILE *fp = fopen (filename, "r");
   if (fp == NULL)
-    error (EXIT_FAILURE, errno, "open: %s", modpath);
+    error (EXIT_FAILURE, errno, "open: %s/modules.dep", modpath);
 
   char *line = NULL;
   size_t llen = 0;
@@ -222,15 +188,9 @@ read_module_deps (const char *modpath)
     char *name = strtok (line, ": ");
     if (!name) continue;
 
-    /* Only want the module basename, but keep the ".ko" extension. */
-    char *p = strrchr (name, '/');
-    if (p) name = p+1;
-
+    add_module (name);
     char *dep;
     while ((dep = strtok (NULL, " ")) != NULL) {
-      p = strrchr (dep, '/');
-      if (p) dep = p+1;
-
       add_module_dep (name, dep);
     }
   }
@@ -239,25 +199,73 @@ read_module_deps (const char *modpath)
   fclose (fp);
 }
 
+static struct module *
+add_module (const char *name)
+{
+  struct module *m = find_module (name);
+  if (m)
+    return m;
+  m = xmalloc (sizeof *m);
+  m->name = xstrdup (name);
+  m->deps = NULL;
+  m->next = modules;
+  m->visited = 0;
+  modules = m;
+  return m;
+}
+
+static struct module *
+find_module (const char *name)
+{
+  struct module *m;
+  for (m = modules; m; m = m->next) {
+    if (strcmp (name, m->name) == 0)
+      break;
+  }
+  return m;
+}
+
 /* Module 'name' requires 'dep' to be loaded first. */
 static void
 add_module_dep (const char *name, const char *dep)
 {
-  struct moddep *m = xmalloc (sizeof *m);
-  m->next = moddeps;
-  moddeps = m;
-  m->name = xstrdup (name);
-  m->dep = xstrdup (dep);
+  if (verbose >= 2) fprintf (stderr, "add_module_dep %s: %s\n", name, dep);
+  struct module *m1 = add_module (name);
+  struct module *m2 = add_module (dep);
+  struct moddep *d;
+  for (d = m1->deps; d; d = d->next) {
+    if (d->dep == m2)
+      return;
+  }
+  d = xmalloc (sizeof *d);
+  d->next = m1->deps;
+  d->dep = m2;
+  m1->deps = d;
+  return;
 }
 
-static const char *
-get_module_dep (const char *name)
+/* DFS on the dependency graph */
+static void
+print_module_load_order (FILE *pipe, FILE *list, struct module *m)
 {
-  struct moddep *m;
+  if (m->visited)
+    return;
 
-  for (m = moddeps; m; m = m->next)
-    if (strcmp (m->name, name) == 0)
-      return m->dep;
+  for (struct moddep *d = m->deps; d; d = d->next)
+    print_module_load_order (pipe, list, d->dep);
 
-  return NULL;
+  if (m->name[0] == 0)
+    return;
+
+  char *basename = strrchr (m->name, '/');
+  if (basename)
+    ++basename;
+  else
+    basename = m->name;
+
+  fputs (m->name, pipe);
+  fputc ('\n', pipe);
+  fputs (basename, list);
+  fputc ('\n', list);
+  m->visited = 1;
 }

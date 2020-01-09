@@ -1,5 +1,5 @@
 /* febootstrap-supermin-helper reimplementation in C.
- * Copyright (C) 2009-2010 Red Hat Inc.
+ * Copyright (C) 2009-2011 Red Hat Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,8 +19,7 @@
 /* This very minimal init "script" goes in the mini-initrd used to
  * boot the ext2-based appliance.  Note we have no shell, so we cannot
  * use system(3) to run external commands.  In fact, we don't have
- * very much at all, except this program, insmod.static, and some
- * kernel modules.
+ * very much at all, except this program, and some kernel modules.
  */
 
 #include <config.h>
@@ -30,26 +29,62 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <dirent.h>
 #include <sys/types.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+
+#include <asm/unistd.h>
+
+#ifdef HAVE_LIBZ
+#include <zlib.h>
+#endif
+
+extern long init_module (void *, unsigned long, const char *);
+
+/* translation taken from module-init-tools/insmod.c  */
+static const char *moderror(int err)
+{
+  switch (err) {
+  case ENOEXEC:
+    return "Invalid module format";
+  case ENOENT:
+    return "Unknown symbol in module";
+  case ESRCH:
+    return "Module has wrong symbol version";
+  case EINVAL:
+    return "Invalid parameters";
+  default:
+    return strerror(err);
+  }
+}
 
 /* Leave this enabled for now.  When we get more confident in the boot
  * process we can turn this off or make it configurable.
  */
 #define verbose 1
 
+static void mount_proc (void);
 static void print_uptime (void);
 static void insmod (const char *filename);
+static void show_directory (const char *dir);
 
 static char line[1024];
 
 int
 main ()
 {
+  mount_proc ();
+
   print_uptime ();
-  fprintf (stderr, "febootstrap: ext2 mini initrd starting up\n");
+  fprintf (stderr, "febootstrap: ext2 mini initrd starting up: "
+           PACKAGE_VERSION
+#ifdef HAVE_LIBZ
+           " zlib"
+#endif
+           "\n");
 
   /* Create some fixed directories. */
   mkdir ("/dev", 0755);
@@ -73,7 +108,16 @@ main ()
     size_t n = strlen (line);
     if (n > 0 && line[n-1] == '\n')
       line[--n] = '\0';
-    insmod (line);
+
+    /* XXX Because of the way we construct the module list, the
+     * "modules" file can contain non-existent modules.  Ignore those
+     * for now.  Really we should add them as missing dependencies.
+     * See ext2initrd.c:ext2_make_initrd().
+     */
+    if (access (line, R_OK) == 0)
+      insmod (line);
+    else
+      fprintf (stderr, "skipped %s, module is missing\n", line);
   }
   fclose (fp);
 
@@ -149,33 +193,108 @@ main ()
   print_uptime ();
   execl ("/init", "init", NULL);
   perror ("execl: /init");
+
+  /* /init failed to execute, but why?  Before we ditch, print some
+   * debug.  Although we have a full appliance, the fact that /init
+   * failed to run means we may not be able to run any commands.
+   */
+  show_directory ("/");
+  show_directory ("/bin");
+  show_directory ("/lib");
+  show_directory ("/lib64");
+  fflush (stderr);
+
   exit (EXIT_FAILURE);
 }
 
 static void
 insmod (const char *filename)
 {
-  if (verbose)
-    fprintf (stderr, "febootstrap: insmod %s\n", filename);
+  size_t size;
 
-  pid_t pid = fork ();
-  if (pid == -1) {
-    perror ("insmod: fork");
+  if (verbose)
+    fprintf (stderr, "febootstrap: internal insmod %s\n", filename);
+
+#ifdef HAVE_LIBZ
+  gzFile gzfp = gzopen (filename, "rb");
+  int capacity = 64*1024;
+  char *buf = (char *) malloc (capacity);
+  int tmpsize = 8 * 1024;
+  char tmp[tmpsize];
+  int num;
+
+  size = 0;
+
+  if (gzfp == NULL) {
+    fprintf (stderr, "insmod: gzopen failed: %s", filename);
     exit (EXIT_FAILURE);
   }
+  while ((num = gzread (gzfp, tmp, tmpsize)) > 0) {
+    if (num > capacity) {
+      buf = (char*) realloc (buf, size*2);
+      capacity = size;
+    }
+    memcpy (buf+size, tmp, num);
+    capacity -= num;
+    size += num;
+  }
+  if (num == -1) {
+    perror ("insmod: gzread");
+    exit (EXIT_FAILURE);
+  }
+  gzclose (gzfp);
+#else
+  int fd = open (filename, O_RDONLY);
+  if (fd == -1) {
+    fprintf (stderr, "insmod: open: %s: %m\n", filename);
+    exit (EXIT_FAILURE);
+  }
+  struct stat st;
+  if (fstat (fd, &st) == -1) {
+    perror ("insmod: fstat");
+    exit (EXIT_FAILURE);
+  }
+  size = st.st_size;
+  char buf[size];
+  size_t offset = 0;
+  do {
+    ssize_t rc = read (fd, buf + offset, size - offset);
+    if (rc == -1) {
+      perror ("insmod: read");
+      exit (EXIT_FAILURE);
+    }
+    offset += rc;
+  } while (offset < size);
+  close (fd);
+#endif
 
-  if (pid == 0) { /* Child. */
-    execl ("/insmod.static", "insmod.static", filename, NULL);
-    perror ("insmod: execl");
-    _exit (EXIT_FAILURE);
+  if (init_module (buf, size, "") != 0) {
+    fprintf (stderr, "insmod: init_module: %s: %s\n", filename, moderror (errno));
+    /* However ignore the error because this can just happen because
+     * of a missing device.
+     */
   }
 
-  /* Parent. */
-  int status;
-  if (wait (&status) == -1 ||
-      WEXITSTATUS (status) != 0)
-    perror ("insmod: wait");
-    /* but ignore the error, some will be because the device is not found */
+#ifdef HAVE_LIBZ
+  free (buf);
+#endif
+}
+
+/* Mount /proc unless it's mounted already. */
+static void
+mount_proc (void)
+{
+  if (access ("/proc/uptime", R_OK) == -1) {
+    mkdir ("/proc", 0755);
+
+    if (verbose)
+      fprintf (stderr, "febootstrap: mounting /proc\n");
+
+    if (mount ("proc", "/proc", "proc", 0, "") == -1) {
+      perror ("mount: /proc");
+      /* Non-fatal. */
+    }
+  }
 }
 
 /* Print contents of /proc/uptime. */
@@ -192,4 +311,65 @@ print_uptime (void)
   fclose (fp);
 
   fprintf (stderr, "febootstrap: uptime: %s", line);
+}
+
+/* Display a directory on stderr.  This is used for debugging only. */
+static char
+dirtype (int dt)
+{
+  switch (dt) {
+  case DT_BLK: return 'b';
+  case DT_CHR: return 'c';
+  case DT_DIR: return 'd';
+  case DT_FIFO: return 'p';
+  case DT_LNK: return 'l';
+  case DT_REG: return '-';
+  case DT_SOCK: return 's';
+  case DT_UNKNOWN: return 'u';
+  default: return '?';
+  }
+}
+
+static void
+show_directory (const char *dirname)
+{
+  DIR *dir;
+  struct dirent *d;
+  struct stat statbuf;
+  char link[PATH_MAX+1];
+  ssize_t n;
+
+  fprintf (stderr, "febootstrap: debug: listing directory %s\n", dirname);
+
+  if (chdir (dirname) == -1) {
+    perror (dirname);
+    return;
+  }
+
+  dir = opendir (".");
+  if (!dir) {
+    perror (dirname);
+    chdir ("/");
+    return;
+  }
+
+  while ((d = readdir (dir)) != NULL) {
+    fprintf (stderr, "%5lu %c %-16s", d->d_ino, dirtype (d->d_type), d->d_name);
+    if (lstat (d->d_name, &statbuf) >= 0) {
+      fprintf (stderr, " %06o %ld %d:%d",
+               statbuf.st_mode, statbuf.st_size,
+               statbuf.st_uid, statbuf.st_gid);
+      if (S_ISLNK (statbuf.st_mode)) {
+        n = readlink (d->d_name, link, PATH_MAX);
+        if (n >= 0) {
+          link[n] = '\0';
+          fprintf (stderr, " -> %s", link);
+        }
+      }
+    }
+    fprintf (stderr, "\n");
+  }
+
+  closedir (dir);
+  chdir ("/");
 }

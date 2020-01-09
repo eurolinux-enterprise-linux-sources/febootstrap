@@ -1,5 +1,5 @@
 /* febootstrap-supermin-helper reimplementation in C.
- * Copyright (C) 2009-2010 Red Hat Inc.
+ * Copyright (C) 2009-2011 Red Hat Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,13 +43,13 @@ ext2_filsys fs;
  *
  * The downside of allocating a very large initial disk is that the
  * fixed overhead of ext2 is larger (since ext2 calculates it based on
- * the size of the disk).  For a 1GB disk the overhead is
- * approximately 16MB.
+ * the size of the disk).  For a 4GB disk the overhead is
+ * approximately 66MB.
  *
  * In future, make this configurable, or determine it from the input
  * files (XXX).
  */
-#define APPLIANCE_SIZE (1024*1024*1024)
+#define APPLIANCE_SIZE ((off_t)4*1024*1024*1024)
 
 static void
 ext2_start (const char *hostcpu, const char *appliance,
@@ -65,7 +65,7 @@ ext2_start (const char *hostcpu, const char *appliance,
   if (fd == -1)
     error (EXIT_FAILURE, errno, "open: %s", appliance);
 
-  if (lseek (fd, APPLIANCE_SIZE - 1, SEEK_SET) == -1)
+  if (lseek (fd, APPLIANCE_SIZE - 1, SEEK_SET) == (off_t) -1)
     error (EXIT_FAILURE, errno, "lseek");
 
   char c = 0;
@@ -107,8 +107,16 @@ ext2_start (const char *hostcpu, const char *appliance,
 static void
 ext2_end (void)
 {
+  if (verbose)
+    print_timestamped_message ("closing ext2 filesystem");
+
   /* Write out changes and close. */
-  errcode_t err = ext2fs_close (fs);
+  errcode_t err;
+#ifdef HAVE_EXT2FS_CLOSE2
+  err = ext2fs_close2 (fs, EXT2_FLAG_FLUSH_NO_SYNC);
+#else
+  err = ext2fs_close (fs);
+#endif
   if (err != 0)
     error (EXIT_FAILURE, 0, "ext2fs_close: %s", error_message (err));
 }
@@ -206,13 +214,15 @@ ext2_empty_inode (ext2_ino_t dir_ino, const char *dirname, const char *basename,
 
 /* You must create the file first with ext2_empty_inode. */
 void
-ext2_write_file (ext2_ino_t ino, const char *buf, size_t size)
+ext2_write_file (ext2_ino_t ino, const char *buf, size_t size,
+                 const char *orig_filename)
 {
   errcode_t err;
   ext2_file_t file;
   err = ext2fs_file_open2 (fs, ino, NULL, EXT2_FILE_WRITE, &file);
   if (err != 0)
-    error (EXIT_FAILURE, 0, "ext2fs_file_open2: %s", error_message (err));
+    error (EXIT_FAILURE, 0, "ext2fs_file_open2: %s: %s",
+           orig_filename, error_message (err));
 
   /* ext2fs_file_write cannot deal with partial writes.  You have
    * to write the entire file in a single call.
@@ -220,28 +230,37 @@ ext2_write_file (ext2_ino_t ino, const char *buf, size_t size)
   unsigned int written;
   err = ext2fs_file_write (file, buf, size, &written);
   if (err != 0)
-    error (EXIT_FAILURE, 0, "ext2fs_file_write: %s", error_message (err));
+    error (EXIT_FAILURE, 0, "ext2fs_file_write: %s: %s\n"
+           "Block allocation failures can happen here for several reasons:\n"
+           " - /lib/modules contains modules with debug that makes the modules very large\n"
+           " - a file listed in 'hostfiles' is unexpectedly very large\n"
+           " - too many packages added to the supermin appliance",
+           orig_filename, error_message (err));
   if ((size_t) written != size)
     error (EXIT_FAILURE, 0,
-           "ext2fs_file_write: size = %zu != written = %u\n",
-           size, written);
+           "ext2fs_file_write: %s: size = %zu != written = %u\n",
+           orig_filename, size, written);
 
   err = ext2fs_file_flush (file);
   if (err != 0)
-    error (EXIT_FAILURE, 0, "ext2fs_file_flush: %s", error_message (err));
+    error (EXIT_FAILURE, 0, "ext2fs_file_flush: %s: %s",
+           orig_filename, error_message (err));
   err = ext2fs_file_close (file);
   if (err != 0)
-    error (EXIT_FAILURE, 0, "ext2fs_file_close: %s", error_message (err));
+    error (EXIT_FAILURE, 0, "ext2fs_file_close: %s: %s",
+           orig_filename, error_message (err));
 
   /* Update the true size in the inode. */
   struct ext2_inode inode;
   err = ext2fs_read_inode (fs, ino, &inode);
   if (err != 0)
-    error (EXIT_FAILURE, 0, "ext2fs_read_inode: %s", error_message (err));
+    error (EXIT_FAILURE, 0, "ext2fs_read_inode: %s: %s",
+           orig_filename, error_message (err));
   inode.i_size = size;
   err = ext2fs_write_inode (fs, ino, &inode);
   if (err != 0)
-    error (EXIT_FAILURE, 0, "ext2fs_write_inode: %s", error_message (err));
+    error (EXIT_FAILURE, 0, "ext2fs_write_inode: %s: %s",
+           orig_filename, error_message (err));
 }
 
 /* This is just a wrapper around ext2fs_link which calls
@@ -402,6 +421,20 @@ ext2_file_stat (const char *orig_filename, const struct stat *statbuf)
     dirname = strndup (orig_filename, p-orig_filename);
     basename = p+1;
 
+    /* If the parent directory is a symlink to another directory, then
+     * we want to look up the target directory. (RHBZ#698089).
+     */
+    struct stat stat1, stat2;
+    if (lstat (dirname, &stat1) == 0 && S_ISLNK (stat1.st_mode) &&
+        stat (dirname, &stat2) == 0 && S_ISDIR (stat2.st_mode)) {
+      char *new_dirname = malloc (PATH_MAX+1);
+      ssize_t r = readlink (dirname, new_dirname, PATH_MAX+1);
+      if (r == -1)
+        error (EXIT_FAILURE, errno, "readlink: %s", orig_filename);
+      new_dirname[r] = '\0';
+      dirname = new_dirname;
+    }
+
     /* Look up the parent directory. */
     err = ext2fs_namei (fs, EXT2_ROOT_INO, EXT2_ROOT_INO, dirname, &dir_ino);
     if (err != 0)
@@ -424,7 +457,7 @@ ext2_file_stat (const char *orig_filename, const struct stat *statbuf)
 
     if (statbuf->st_size > 0) {
       char *buf = read_whole_file (orig_filename, statbuf->st_size);
-      ext2_write_file (ino, buf, statbuf->st_size);
+      ext2_write_file (ino, buf, statbuf->st_size, orig_filename);
       free (buf);
     }
   }
@@ -440,7 +473,7 @@ ext2_file_stat (const char *orig_filename, const struct stat *statbuf)
     ssize_t r = readlink (orig_filename, buf, sizeof buf);
     if (r == -1)
       error (EXIT_FAILURE, errno, "readlink: %s", orig_filename);
-    ext2_write_file (ino, buf, r);
+    ext2_write_file (ino, buf, r, orig_filename);
   }
   /* Create directory. */
   else if (S_ISDIR (statbuf->st_mode))

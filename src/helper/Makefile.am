@@ -40,16 +40,18 @@ febootstrap_supermin_helper_LDADD = \
 noinst_PROGRAMS = init
 init_SOURCES = init.c
 init_CFLAGS = -static
-init_LDFLAGS = -all-static
+init_LDFLAGS = -static
 
-# http://www.doof.me.uk/2010/05/07/cute-objcopy-hack/
-ELF_DEFAULT_ARCH = $(shell $(srcdir)/elf-default-arch | gawk '{ print $$1 }')
-DEFAULT_ARCH = $(shell $(srcdir)/elf-default-arch | gawk '{ print $$2 }')
-ext2init.o: init
+CLEANFILES = ext2init.S
+
+ext2init.o: ext2init.S
+	$(CC) -o $@ -c $<
+
+ext2init.S: init
 	strip --strip-all $<
 	@file $< | grep -isq static || \
 	  (echo "*** error: init is not staticly linked"; exit 1)
-	objcopy -I binary -B $(DEFAULT_ARCH) -O $(ELF_DEFAULT_ARCH) $< $@
+	./bin2s.pl $< $@
 
 man_MANS = \
 	febootstrap-supermin-helper.8
@@ -63,12 +65,20 @@ febootstrap-supermin-helper.8: febootstrap-supermin-helper.pod
 	  --release "$(PACKAGE_NAME)-$(PACKAGE_VERSION)" \
 	  $< > $@
 
-febootstrap-supermin-helper.txt: febootstrap-supermin-helper.pod
-	pod2text $< > $@
+noinst_DATA = \
+	$(top_builddir)/html/febootstrap-supermin-helper.8.html
+
+$(top_builddir)/html/febootstrap-supermin-helper.8.html: febootstrap-supermin-helper.pod
+	mkdir -p $(top_builddir)/html
+	cd $(top_builddir) && pod2html \
+	  --css 'pod.css' \
+	  --htmldir html \
+	  --outfile html/febootstrap-supermin-helper.8.html \
+	  helper/febootstrap-supermin-helper.pod
 
 endif
 
 EXTRA_DIST = \
-	febootstrap-supermin-helper.8 febootstrap-supermin-helper.txt \
-	  febootstrap-supermin-helper.pod \
-	  elf-default-arch
+	febootstrap-supermin-helper.8 \
+	febootstrap-supermin-helper.pod \
+	bin2s.pl

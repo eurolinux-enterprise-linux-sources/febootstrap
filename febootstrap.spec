@@ -1,31 +1,30 @@
-Summary:     Bootstrap a new Red Hat Enterprise Linux system (like debootstrap)
+Summary:     Bootstrapping tool for creating supermin appliances
 Name:        febootstrap
-Version:     2.11
-Release:     7%{?dist}
+Version:     3.12
+Release:     1%{?dist}
 License:     GPLv2+
 Group:       Development/Tools
-URL:         http://et.redhat.com/~rjones/febootstrap/
-Source0:     http://et.redhat.com/~rjones/febootstrap/files/%{name}-%{version}.tar.gz
+URL:         http://people.redhat.com/~rjones/febootstrap/
+Source0:     http://people.redhat.com/~rjones/febootstrap/files/%{name}-%{version}.tar.gz
+Source1:     http://people.redhat.com/~rjones/febootstrap/files/%{name}-2.11.tar.gz
 BuildRoot:   %{_tmppath}/%{name}-%{version}-%{release}-root
 ExclusiveArch: x86_64
-
-# Improve the stability of the checksum and reduce the need to rebuild
-# the appliance.
-Patch0:      0001-helper-Ignore-times-of-special-files-when-calculatin.patch
 
 BuildRequires: /usr/bin/pod2man
 BuildRequires: fakeroot >= 1.11
 BuildRequires: fakechroot >= 2.9-20
 BuildRequires: yum >= 3.2
 BuildRequires: /sbin/mke2fs
-BuildRequires: /sbin/insmod.static
 BuildRequires: e2fsprogs-devel
 BuildRequires: glibc-static
+BuildRequires: ocaml, ocaml-findlib-devel
 BuildRequires: prelink
+BuildRequires: zlib-static
 
 Requires:    fakeroot >= 1.11
 Requires:    fakechroot >= 2.9-20
 Requires:    yum >= 3.2
+Requires:    yum-utils
 Requires:    febootstrap-supermin-helper = %{version}-%{release}
 
 # These are suggestions.  However making them hard requirements
@@ -36,16 +35,14 @@ Requires:    febootstrap-supermin-helper = %{version}-%{release}
 
 
 %description
-febootstrap is a Red Hat Enterprise Linux equivalent to Debian's
-debootstrap.  You can use it to create a basic Red Hat Enterprise
-Linux or Fedora filesystem, and build initramfs (initrd.img) or
-filesystem images.
+febootstrap is a tool for building supermin appliances.  These are
+tiny appliances (similar to virtual machines), usually around 100KB in
+size, which get fully instantiated on-the-fly in a fraction of a
+second when you need to boot one of them.
 
-febootstrap also includes a separate tool to minimize filesystems by
-removing unneeded locales, documentation etc.
-
-The main difference from other appliance building tools is that this
-one doesn't need to be run as root.
+Note that febootstrap in RHEL 6.3+ builds febootstrap (version 2.11)
+and febootstrap3 (version %{version}).  This is for backwards
+compatibility with RHEL 6.0, 6.1 and 6.2.
 
 
 %package supermin-helper
@@ -54,7 +51,6 @@ Group:       Development/Tools
 Requires:    util-linux-ng
 Requires:    cpio
 Requires:    /sbin/mke2fs
-Requires:    /sbin/insmod.static
 Obsoletes:   febootstrap < 2.11-6
 
 
@@ -63,25 +59,43 @@ Obsoletes:   febootstrap < 2.11-6
 
 
 %prep
-%setup -q
-
-%patch0 -p1
+# This creates:
+#   febootstrap-3.x/
+#   febootstrap-3.x/febootstrap-3.x/    # febootstrap3
+#   febootstrap-3.x/febootstrap-2.11/   # febootstrap
+%setup -q -c
+%setup -T -D -a 1
 
 
 %build
+pushd %{name}-%{version}
 %configure
 make
+popd
+
+pushd %{name}-2.11
+%configure
+make
+popd
 
 
 %install
 rm -rf $RPM_BUILD_ROOT
-make DESTDIR=$RPM_BUILD_ROOT install
 
-# Clean up the examples/ directory which will get installed in %doc.
-# In this case I don't want the scripts to be executable because
-# people should read them carefully before running them.
-rm examples/Makefile*
-chmod -x examples/*.sh
+# Install febootstrap 3.x.
+make -C %{name}-%{version} DESTDIR=$RPM_BUILD_ROOT install
+mv $RPM_BUILD_ROOT%{_bindir}/febootstrap $RPM_BUILD_ROOT%{_bindir}/febootstrap3
+mv $RPM_BUILD_ROOT%{_mandir}/man8/febootstrap.8 $RPM_BUILD_ROOT%{_mandir}/man8/febootstrap3.8 
+
+# Install febootstrap 2.11.
+make -C %{name}-2.11 DESTDIR=$RPM_BUILD_ROOT install
+
+# But we want febootstrap-supermin-helper v3.  Both versions are
+# compatible but the newest version has all the bug fixes.
+rm $RPM_BUILD_ROOT%{_bindir}/febootstrap-supermin-helper
+install -m 0755 %{name}-%{version}/helper/febootstrap-supermin-helper $RPM_BUILD_ROOT%{_bindir}/
+rm $RPM_BUILD_ROOT%{_mandir}/man8/febootstrap-supermin-helper.8
+install -m 0644 %{name}-%{version}/helper/febootstrap-supermin-helper.8 $RPM_BUILD_ROOT%{_mandir}/man8/
 
 # febootstrap-supermin-helper is marked as requiring an executable
 # stack.  This happens because we use objcopy to create one of the
@@ -90,6 +104,11 @@ chmod -x examples/*.sh
 # clear the flag here.
 execstack -c $RPM_BUILD_ROOT%{_bindir}/febootstrap-supermin-helper
 
+# Doc files.
+cp %{name}-%{version}/COPYING COPYING
+cp %{name}-%{version}/README README3
+cp %{name}-2.11/README README2
+
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -97,19 +116,21 @@ rm -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root,-)
-%doc COPYING README examples
+%doc COPYING README2 README3
 %{_bindir}/febootstrap
 %{_bindir}/febootstrap-run
 %{_bindir}/febootstrap-install
 %{_bindir}/febootstrap-minimize
 %{_bindir}/febootstrap-to-initramfs
 %{_bindir}/febootstrap-to-supermin
+%{_bindir}/febootstrap3
 %{_mandir}/man8/febootstrap.8*
 %{_mandir}/man8/febootstrap-run.8*
 %{_mandir}/man8/febootstrap-install.8*
 %{_mandir}/man8/febootstrap-minimize.8*
 %{_mandir}/man8/febootstrap-to-initramfs.8*
 %{_mandir}/man8/febootstrap-to-supermin.8*
+%{_mandir}/man8/febootstrap3.8*
 
 
 %files supermin-helper
@@ -120,6 +141,15 @@ rm -rf $RPM_BUILD_ROOT
 
 
 %changelog
+* Tue Dec 20 2011 Richard Jones <rjones@redhat.com> - 3.12-1
+- Rebase to febootstrap 3.12.
+  resolves: RHBZ#719877
+
+* Sat Aug 27 2011 Richard Jones <rjones@redhat.com> - 3.9-1
+- Rebase to febootstrap 3.9.
+  resolves: RHBZ#719877
+- This package contains febootstrap (version 2.11) and febootstrap3.
+
 * Thu Mar 17 2011 Richard Jones <rjones@redhat.com> - 2.11-7
 - Splitting the package broke RHEL 6.0 -> 6.1 upgrades.  Add an Obsoletes
   header to fix this.
