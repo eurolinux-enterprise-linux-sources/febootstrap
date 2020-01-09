@@ -1,0 +1,119 @@
+From c20092be6575ff787d9733a73037e08c1dc417d1 Mon Sep 17 00:00:00 2001
+From: "Richard W.M. Jones" <rjones@redhat.com>
+Date: Tue, 26 Jun 2012 16:09:19 +0100
+Subject: [PATCH] helper: Fix -u and -g options when host uses LDAP or NIS
+ (RHBZ#835130).
+
+The getpwnam/getgrnam interfaces are not very well specified in the
+case where we are looking up a name that does not exist.
+
+Previously the code assumed that if errno was set, that would
+distinguish an error from the not found case.  However this is
+certainly not true for LDAP, where errno == ENOENT might indicate not
+found.  Other errno values could be returned too.
+
+The specific problem is that if the user specifies a numeric -u or -g
+option, then the first lookup (eg) getpwnam ("42") could return NULL
+with a non-zero errno, and that would not indicate an error.
+
+Change the parsing of both -u and -g options as follows:
+
+(1) If getpwnam/getgrnam returns an error, record it in saved_errno,
+but do NOT fail at this point (as we did before).
+
+(2) If the name is numeric, return the numeric value regardless of
+whether getpwnam/getgrnam returned any error.
+
+(3) Otherwise print an error message and fail.  Ensure that
+saved_errno is printed for debugging purposes.
+---
+ helper/main.c |   48 ++++++++++++++++++++++++------------------------
+ 1 file changed, 24 insertions(+), 24 deletions(-)
+
+diff --git a/helper/main.c b/helper/main.c
+index b769bc7..ac2a925 100644
+--- a/helper/main.c
++++ b/helper/main.c
+@@ -97,27 +97,27 @@ usage (FILE *f, const char *progname)
+ static uid_t
+ parseuser (const char *id, const char *progname)
+ {
+-
+   struct passwd *pwd;
++  int saved_errno;
+ 
+   errno = 0;
+   pwd = getpwnam (id);
+ 
+   if (NULL == pwd) {
+-    if (errno != 0) {
+-      fprintf (stderr, "Error looking up user: %m\n");
+-      exit (EXIT_FAILURE);
+-    }
++    saved_errno = errno;
+ 
+     long val;
+     int err = xstrtol (id, NULL, 10, &val, "");
+-    if (err != LONGINT_OK) {
+-        fprintf (stderr, "%s is not a valid user name or uid\n", id);
+-        usage (stderr, progname);
+-        exit (EXIT_FAILURE);
+-    }
+-
+-    return (uid_t) val;
++    if (err == LONGINT_OK)
++      return (uid_t) val;
++
++    fprintf (stderr, "%s: -u option: %s is not a valid user name or uid",
++             progname, id);
++    if (saved_errno != 0)
++      fprintf (stderr, " (getpwnam error: %s)", strerror (saved_errno));
++    fprintf (stderr, "\n");
++    usage (stderr, progname);
++    exit (EXIT_FAILURE);
+   }
+ 
+   return pwd->pw_uid;
+@@ -126,27 +126,27 @@ parseuser (const char *id, const char *progname)
+ static gid_t
+ parsegroup (const char *id, const char *progname)
+ {
+-
+   struct group *grp;
++  int saved_errno;
+ 
+   errno = 0;
+   grp = getgrnam (id);
+ 
+   if (NULL == grp) {
+-    if (errno != 0) {
+-      fprintf (stderr, "Error looking up group: %m\n");
+-      exit (EXIT_FAILURE);
+-    }
++    saved_errno = errno;
+ 
+     long val;
+     int err = xstrtol (id, NULL, 10, &val, "");
+-    if (err != LONGINT_OK) {
+-        fprintf (stderr, "%s is not a valid group name or gid\n", id);
+-        usage (stderr, progname);
+-        exit (EXIT_FAILURE);
+-    }
+-
+-    return (gid_t) val;
++    if (err == LONGINT_OK)
++      return (gid_t) val;
++
++    fprintf (stderr, "%s: -g option: %s is not a valid group name or gid",
++             progname, id);
++    if (saved_errno != 0)
++      fprintf (stderr, " (getgrnam error: %s)", strerror (saved_errno));
++    fprintf (stderr, "\n");
++    usage (stderr, progname);
++    exit (EXIT_FAILURE);
+   }
+ 
+   return grp->gr_gid;
+-- 
+1.7.10.4
+

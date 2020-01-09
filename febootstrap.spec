@@ -1,7 +1,7 @@
 Summary:     Bootstrapping tool for creating supermin appliances
 Name:        febootstrap
 Version:     3.12
-Release:     1%{?dist}
+Release:     2%{?dist}
 License:     GPLv2+
 Group:       Development/Tools
 URL:         http://people.redhat.com/~rjones/febootstrap/
@@ -9,6 +9,8 @@ Source0:     http://people.redhat.com/~rjones/febootstrap/files/%{name}-%{versio
 Source1:     http://people.redhat.com/~rjones/febootstrap/files/%{name}-2.11.tar.gz
 BuildRoot:   %{_tmppath}/%{name}-%{version}-%{release}-root
 ExclusiveArch: x86_64
+
+Patch0:      0001-helper-Fix-u-and-g-options-when-host-uses-LDAP-or-NI.patch
 
 BuildRequires: /usr/bin/pod2man
 BuildRequires: fakeroot >= 1.11
@@ -65,6 +67,10 @@ Obsoletes:   febootstrap < 2.11-6
 #   febootstrap-3.x/febootstrap-2.11/   # febootstrap
 %setup -q -c
 %setup -T -D -a 1
+
+pushd %{name}-%{version}
+%patch0 -p1
+popd
 
 
 %build
@@ -141,6 +147,10 @@ rm -rf $RPM_BUILD_ROOT
 
 
 %changelog
+* Wed Aug 15 2012 Richard Jones <rjones@redhat.com> - 3.12-2
+- Hotfix: helper: Fix -u and -g options when host uses LDAP or NIS
+  resolves: RHBZ#803962
+
 * Tue Dec 20 2011 Richard Jones <rjones@redhat.com> - 3.12-1
 - Rebase to febootstrap 3.12.
   resolves: RHBZ#719877
