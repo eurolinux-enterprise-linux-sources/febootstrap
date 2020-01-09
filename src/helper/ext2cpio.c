@@ -1,5 +1,5 @@
 /* febootstrap-supermin-helper reimplementation in C.
- * Copyright (C) 2009-2010 Red Hat Inc.
+ * Copyright (C) 2009-2010, 2012 Red Hat Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -98,8 +98,12 @@ parse_next_entry (void)
     error (EXIT_FAILURE, errno, "read failure reading cpio file");
   curr += sizeof header - 4;
 
-  if (verbose >= 2)
-    fprintf (stderr, "cpio header %s\n", header);
+  if (verbose >= 2) {
+    char header2[sizeof header + 1];
+    memcpy (header2, header, sizeof header);
+    header2[sizeof header] = '\0';
+    fprintf (stderr, "cpio header %s\n", header2);
+  }
 
   if (memcmp (header, "070707", 6) == 0)
     error (EXIT_FAILURE, 0, "incorrect cpio method: use -H newc option");
@@ -348,6 +352,8 @@ add_link (ext2_ino_t real_ino)
   p->minor = dev_minor;
   p->major = dev_major;
   p->real_ino = real_ino;
+  p->next = links_head;
+  links_head = p;
 }
 
 static void

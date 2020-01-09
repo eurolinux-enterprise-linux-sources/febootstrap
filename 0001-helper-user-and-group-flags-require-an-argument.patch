@@ -1,0 +1,32 @@
+From f54cf58724d3c2f9b0813c8ae1d0e57d5746322e Mon Sep 17 00:00:00 2001
+From: "Richard W.M. Jones" <rjones@redhat.com>
+Date: Sun, 7 Jul 2013 21:59:53 +0100
+Subject: [PATCH] helper: --user and --group flags require an argument.
+
+Bug found by CMU Mayhem tool, see:
+https://lwn.net/Articles/557055/
+
+Thanks: Alexandre Rebert, Hilko Bengen.
+---
+ helper/main.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/helper/main.c b/helper/main.c
+index 6948e93..4123ae9 100644
+--- a/helper/main.c
++++ b/helper/main.c
+@@ -47,9 +47,9 @@ static const struct option long_options[] = {
+   { "help", 0, 0, HELP_OPTION },
+   { "copy-kernel", 0, 0, 0 },
+   { "format", required_argument, 0, 'f' },
+-  { "group", 0, 0, 'g' },
++  { "group", required_argument, 0, 'g' },
+   { "kmods", required_argument, 0, 'k' },
+-  { "user", 0, 0, 'u' },
++  { "user", required_argument, 0, 'u' },
+   { "verbose", 0, 0, 'v' },
+   { "version", 0, 0, 'V' },
+   { 0, 0, 0, 0 }
+-- 
+1.8.3.1
+

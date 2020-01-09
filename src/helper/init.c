@@ -1,5 +1,5 @@
 /* febootstrap-supermin-helper reimplementation in C.
- * Copyright (C) 2009-2011 Red Hat Inc.
+ * Copyright (C) 2009-2012 Red Hat Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,11 +26,14 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
+#include <inttypes.h>
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <time.h>
 #include <sys/types.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
@@ -41,6 +44,17 @@
 #ifdef HAVE_LIBZ
 #include <zlib.h>
 #endif
+
+/* Maximum time to wait for the root device to appear (seconds).
+ *
+ * On slow machines with lots of disks (Koji running the 255 disk test
+ * in libguestfs) this really can take several minutes.
+ *
+ * Note that the actual wait time is approximately double the number
+ * given here because there is a delay which doubles until it reaches
+ * this value.
+ */
+#define MAX_ROOT_WAIT 300
 
 extern long init_module (void *, unsigned long, const char *);
 
@@ -68,9 +82,11 @@ static const char *moderror(int err)
 
 static void mount_proc (void);
 static void print_uptime (void);
+static void read_cmdline (void);
 static void insmod (const char *filename);
 static void show_directory (const char *dir);
 
+static char cmdline[1024];
 static char line[1024];
 
 int
@@ -85,6 +101,8 @@ main ()
            " zlib"
 #endif
            "\n");
+
+  read_cmdline ();
 
   /* Create some fixed directories. */
   mkdir ("/dev", 0755);
@@ -121,23 +139,54 @@ main ()
   }
   fclose (fp);
 
-  /* Look for the ext2 filesystem device.  It's always the last
-   * one that was added.
-   * XXX More than 25 devices?
+  /* Look for the ext2 filesystem device.  It's always the last one
+   * that was added.  Modern versions of libguestfs supply the
+   * expected name of the root device on the command line
+   * ("root=/dev/...").  For virtio-scsi this is required, because we
+   * must wait for the device to appear after the module is loaded.
    */
-  char path[] = "/sys/block/xdx/dev";
-  char class[3] = { 'v', 's', 'h' };
-  size_t i, j;
-  fp = NULL;
-  for (i = 0; i < sizeof class; ++i) {
-    for (j = 'z'; j >= 'a'; --j) {
-      path[11] = class[i];
-      path[13] = j;
+  char *root, *path;
+  size_t len;
+  root = strstr (cmdline, "root=");
+  if (root) {
+    root += 5;
+    if (strncmp (root, "/dev/", 5) == 0)
+      root += 5;
+    len = strcspn (root, " ");
+    root[len] = '\0';
+
+    asprintf (&path, "/sys/block/%s/dev", root);
+
+    uint64_t delay_ns = 250000;
+    while (delay_ns <= MAX_ROOT_WAIT * UINT64_C(1000000000)) {
       fp = fopen (path, "r");
       if (fp != NULL)
         goto found;
+
+      struct timespec t;
+      t.tv_sec = delay_ns / 1000000000;
+      t.tv_nsec = delay_ns % 1000000000;
+      nanosleep (&t, NULL);
+      delay_ns *= 2;
     }
   }
+  else {
+    path = strdup ("/sys/block/xdx/dev");
+
+    char class[3] = { 'v', 's', 'h' };
+    size_t i, j;
+    fp = NULL;
+    for (i = 0; i < sizeof class; ++i) {
+      for (j = 'z'; j >= 'a'; --j) {
+        path[11] = class[i];
+        path[13] = j;
+        fp = fopen (path, "r");
+        if (fp != NULL)
+          goto found;
+      }
+    }
+  }
+
   fprintf (stderr,
            "febootstrap: no ext2 root device found\n"
            "Please include FULL verbose output in your bug report.\n");
@@ -190,7 +239,6 @@ main ()
   chdir ("/");
 
   /* Run /init from ext2 filesystem. */
-  print_uptime ();
   execl ("/init", "init", NULL);
   perror ("execl: /init");
 
@@ -311,6 +359,24 @@ print_uptime (void)
   fclose (fp);
 
   fprintf (stderr, "febootstrap: uptime: %s", line);
+}
+
+/* Read /proc/cmdline into cmdline global (or at least the first 1024
+ * bytes of it).
+ */
+static void
+read_cmdline (void)
+{
+  FILE *fp = fopen ("/proc/cmdline", "r");
+  if (fp == NULL) {
+    perror ("/proc/cmdline");
+    return;
+  }
+
+  fgets (cmdline, sizeof cmdline, fp);
+  fclose (fp);
+
+  fprintf (stderr, "febootstrap: cmdline: %s", cmdline);
 }
 
 /* Display a directory on stderr.  This is used for debugging only. */

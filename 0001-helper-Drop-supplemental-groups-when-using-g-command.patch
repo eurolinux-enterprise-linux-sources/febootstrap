@@ -1,0 +1,36 @@
+From ae302151a7743f324378f520409ee10dd1584860 Mon Sep 17 00:00:00 2001
+From: "Richard W.M. Jones" <rjones@redhat.com>
+Date: Tue, 22 Jan 2013 12:01:47 +0000
+Subject: [PATCH] helper: Drop supplemental groups when using -g command line
+ option.
+
+If we don't call setgroups then the febootstrap-supermin-helper
+process will inherit a random set of supplemental groups from the
+parent process.
+
+(Thanks Steve Grubb)
+---
+ helper/main.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/helper/main.c b/helper/main.c
+index 3dd67a5..b1e9875 100644
+--- a/helper/main.c
++++ b/helper/main.c
+@@ -242,6 +242,13 @@ main (int argc, char *argv[])
+       perror ("setgid");
+       exit (EXIT_FAILURE);
+     }
++
++    /* Kill supplemental groups from parent process (RHBZ#902476). */
++    if (setgroups (1, &egid) == -1) {
++      perror ("setgroups");
++      exit (EXIT_FAILURE);
++    }
++
+     if (setuid (euid) == -1) {
+       perror ("setuid");
+       exit (EXIT_FAILURE);
+-- 
+1.8.2.1
+

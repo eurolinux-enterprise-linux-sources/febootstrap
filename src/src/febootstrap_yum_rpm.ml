@@ -52,9 +52,16 @@ if verbose:
 yb = yum.YumBase ()
 yb.preconf.debuglevel = verbose
 yb.preconf.errorlevel = verbose
+try:
+    yb.prerepoconf.multi_progressbar = None
+except:
+    pass
 if %s:
     yb.preconf.fn = %S
-yb.setCacheDir ()
+try:
+    yb.setCacheDir ()
+except AttributeError:
+    pass
 
 if verbose:
     print \"febootstrap_yum_rpm: looking up the base packages from the command line\"
@@ -78,7 +85,7 @@ while not stable:
             for r in pkg.requires:
                 ps = yb.whatProvides (r[0], r[1], r[2])
                 best = yb._bestPackageFromList (ps.returnPackages ())
-                if best.name != pkg.name:
+                if best and best.name != pkg.name:
                     deps[pkg].append (best)
                     if not deps.has_key (best):
                         deps[best] = False
@@ -95,8 +102,8 @@ if verbose:
     print \"febootstrap_yum_rpm: finished python code\"
 "
     (if verbose then 1 else 0)
-    (match yum_config with None -> "False" | Some _ -> "True")
-    (match yum_config with None -> "" | Some filename -> filename)
+    (match packager_config with None -> "False" | Some _ -> "True")
+    (match packager_config with None -> "" | Some filename -> filename)
     tmpfile in
   run_python py names;
   let chan = open_in tmpfile in
@@ -124,10 +131,6 @@ if verbose:
       ) pkgs
     )
     else pkgs in
-
-  (* Drop the kernel package to save time. *)
-  let pkgs =
-    List.filter (function ("kernel",_,_,_,_) -> false | _ -> true) pkgs in
 
   (* Exclude packages matching [--exclude] regexps on the command line. *)
   let pkgs =
@@ -163,7 +166,7 @@ if verbose:
 
   let cmd = sprintf "yumdownloader%s%s --destdir %s %s"
     (if verbose then "" else " --quiet")
-    (match yum_config with None -> ""
+    (match packager_config with None -> ""
      | Some filename -> sprintf " -c %s" filename)
     (Filename.quote tmpdir)
     (String.concat " " (List.map Filename.quote pkgnames)) in

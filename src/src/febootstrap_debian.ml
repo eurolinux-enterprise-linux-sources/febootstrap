@@ -45,7 +45,7 @@ let get_installed_pkgs () =
 
 let rec debian_resolve_dependencies_and_download names =
   let cmd =
-    sprintf "%s depends --recurse -i %s | grep -v '^[<[:space:]]' | grep -v :i386"
+    sprintf "%s depends --recurse -i %s | grep -v '^[<[:space:]]' | grep -Ev ':\\w+\\b'"
       Config.apt_cache
       (String.concat " " (List.map Filename.quote names)) in
   let pkgs = run_command_get_lines cmd in
@@ -53,7 +53,7 @@ let rec debian_resolve_dependencies_and_download names =
     if Config.apt_cache_depends_recurse_broken then
       workaround_broken_apt_cache_depends_recurse (sort_uniq pkgs)
     else
-      pkgs in
+      sort_uniq pkgs in
 
   (* Exclude packages matching [--exclude] regexps on the command line. *)
   let pkgs =

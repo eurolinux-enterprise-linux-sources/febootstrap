@@ -78,8 +78,8 @@ ext2_start (const char *hostcpu, const char *appliance,
   /* Run mke2fs on the file.
    * XXX Quoting, but this string doesn't come from an untrusted source.
    */
-  char *cmd = xasprintf ("%s -t ext2 -F%s '%s'",
-                         MKE2FS,
+  char *cmd = xasprintf ("%s %s ext2 -F%s '%s'",
+                         MKE2FS, MKE2FS_T_OPTION,
                          verbose >= 2 ? "" : "q",
                          appliance);
   int r = system (cmd);
@@ -91,8 +91,12 @@ ext2_start (const char *hostcpu, const char *appliance,
     print_timestamped_message ("finished mke2fs");
 
   /* Open the filesystem. */
+  int fs_flags = EXT2_FLAG_RW;
+#ifdef EXT2_FLAG_64BITS
+  fs_flags |= EXT2_FLAG_64BITS;
+#endif
   errcode_t err =
-    ext2fs_open (appliance, EXT2_FLAG_RW, 0, 0, unix_io_manager, &fs);
+    ext2fs_open (appliance, fs_flags, 0, 0, unix_io_manager, &fs);
   if (err != 0)
     error (EXIT_FAILURE, 0, "ext2fs_open: %s", error_message (err));
 

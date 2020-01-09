@@ -1,0 +1,52 @@
+From ee7eec04fe5be5387168e43e546ec05f1c4372fe Mon Sep 17 00:00:00 2001
+From: "Richard W.M. Jones" <rjones@redhat.com>
+Date: Wed, 26 Jun 2013 21:40:26 +0100
+Subject: [PATCH] Ignore ghost non-regular files.
+
+RPMs in Fedora 20 contain /var/run and /var/lock, as symlinks, marked
+%ghost.  The old code would create these as regular files which would
+then cause a failure if something was created inside them.
+
+You would see an error like this:
+
+Fatal error: exception Unix.Unix_error(8, "mkdir", "/tmp/supermineab65b098ada401348c6f448e9119504.tmp/root//var/run")
+
+The new code just ignores these files.  With -v it will print a
+message like this:
+
+ignoring ghost non-regular file /var/lock (mode 0120777) from package /tmp/supermin63b9e24946f33f9b16247d063fa7e488.tmp/filesystem-3.2-16.fc20.x86_64.rpm
+ignoring ghost non-regular file /var/run (mode 0120777) from package /tmp/supermin63b9e24946f33f9b16247d063fa7e488.tmp/filesystem-3.2-16.fc20.x86_64.rpm
+---
+ src/febootstrap.ml | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/src/febootstrap.ml b/src/febootstrap.ml
+index f87ad6f..251c13e 100644
+--- a/src/febootstrap.ml
++++ b/src/febootstrap.ml
+@@ -129,6 +129,22 @@ let () =
+     in
+     loop files in
+ 
++  (* Ignore %ghost non-regular files.  RPMs in Fedora 20 contain these.
++   * It's not clear what they are meant to signify.  XXX
++   *)
++  let files = List.filter (
++    function
++    | name, { ft_dir = false; ft_ghost = true; ft_mode = mode }, pkg ->
++        if (mode land 0o170_000) = 0o100_000 then
++          true
++        else (
++          debug "ignoring ghost non-regular file %s (mode 0%o) from package %s"
++	    name mode pkg;
++          false
++        )
++    | _ -> true
++  ) files in
++
+   (* Because we may have excluded some packages, and also because of
+    * distribution packaging errors, it's not necessarily true that a
+    * directory is created before each file in that directory.
+-- 
+1.8.3.1
+

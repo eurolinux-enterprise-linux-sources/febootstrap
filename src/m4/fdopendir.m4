@@ -1,7 +1,7 @@
-# serial 4
+# serial 10
 # See if we need to provide fdopendir.
 
-dnl Copyright (C) 2009-2010 Free Software Foundation, Inc.
+dnl Copyright (C) 2009-2012 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -10,16 +10,17 @@ dnl with or without modifications, as long as this notice is preserved.
 
 AC_DEFUN([gl_FUNC_FDOPENDIR],
 [
+  AC_REQUIRE([gl_DIRENT_H_DEFAULTS])
+  AC_REQUIRE([AC_CANONICAL_HOST]) dnl for cross-compiles
+
   AC_REQUIRE([gl_USE_SYSTEM_EXTENSIONS])
+
   dnl FreeBSD 7.3 has the function, but failed to declare it.
   AC_CHECK_DECLS([fdopendir], [], [HAVE_DECL_FDOPENDIR=0], [[
 #include <dirent.h>
     ]])
   AC_CHECK_FUNCS_ONCE([fdopendir])
   if test $ac_cv_func_fdopendir = no; then
-    AC_LIBOBJ([openat-proc])
-    AC_LIBOBJ([fdopendir])
-    gl_REPLACE_DIRENT_H
     HAVE_FDOPENDIR=0
   else
     AC_CACHE_CHECK([whether fdopendir works],
@@ -27,19 +28,34 @@ AC_DEFUN([gl_FUNC_FDOPENDIR],
       [AC_RUN_IFELSE([AC_LANG_PROGRAM([[
 #include <dirent.h>
 #include <fcntl.h>
+#include <unistd.h>
 #if !HAVE_DECL_FDOPENDIR
-extern DIR *fdopendir (int);
+extern
+# ifdef __cplusplus
+"C"
+# endif
+DIR *fdopendir (int);
 #endif
-]], [int fd = open ("conftest.c", O_RDONLY);
-     if (fd < 0) return 2;
-     return !!fdopendir (fd);])],
+]], [int result = 0;
+     int fd = open ("conftest.c", O_RDONLY);
+     if (fd < 0) result |= 1;
+     if (fdopendir (fd)) result |= 2;
+     if (close (fd)) result |= 4;
+     return result;])],
          [gl_cv_func_fdopendir_works=yes],
          [gl_cv_func_fdopendir_works=no],
-         [gl_cv_func_fdopendir_works="guessing no"])])
-    if test "$gl_cv_func_fdopendir_works" != yes; then
-      REPLACE_FDOPENDIR=1
-      gl_REPLACE_DIRENT_H
-      AC_LIBOBJ([fdopendir])
-    fi
+         [case "$host_os" in
+                    # Guess yes on glibc systems.
+            *-gnu*) gl_cv_func_fdopendir_works="guessing yes" ;;
+                    # If we don't know, assume the worst.
+            *)      gl_cv_func_fdopendir_works="guessing no" ;;
+          esac
+         ])])
+    case "$gl_cv_func_fdopendir_works" in
+      *yes) ;;
+      *)
+        REPLACE_FDOPENDIR=1
+        ;;
+    esac
   fi
 ])

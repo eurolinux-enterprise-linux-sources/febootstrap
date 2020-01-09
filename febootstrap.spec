@@ -1,7 +1,7 @@
 Summary:     Bootstrapping tool for creating supermin appliances
 Name:        febootstrap
-Version:     3.12
-Release:     2%{?dist}
+Version:     3.21
+Release:     4%{?dist}
 License:     GPLv2+
 Group:       Development/Tools
 URL:         http://people.redhat.com/~rjones/febootstrap/
@@ -10,7 +10,10 @@ Source1:     http://people.redhat.com/~rjones/febootstrap/files/%{name}-2.11.tar
 BuildRoot:   %{_tmppath}/%{name}-%{version}-%{release}-root
 ExclusiveArch: x86_64
 
-Patch0:      0001-helper-Fix-u-and-g-options-when-host-uses-LDAP-or-NI.patch
+Patch1:      0001-helper-Drop-supplemental-groups-when-using-g-command.patch
+Patch2:      0001-Copy-sticky-setgid-bits-from-directory-to-base.img-a.patch
+Patch3:      0001-Ignore-ghost-non-regular-files.patch
+Patch4:      0001-helper-user-and-group-flags-require-an-argument.patch
 
 BuildRequires: /usr/bin/pod2man
 BuildRequires: fakeroot >= 1.11
@@ -69,7 +72,10 @@ Obsoletes:   febootstrap < 2.11-6
 %setup -T -D -a 1
 
 pushd %{name}-%{version}
-%patch0 -p1
+%patch1 -p1
+%patch2 -p1
+%patch3 -p1
+%patch4 -p1
 popd
 
 
@@ -147,6 +153,21 @@ rm -rf $RPM_BUILD_ROOT
 
 
 %changelog
+* Mon Aug  5 2013 Richard Jones <rjones@redhat.com> - 3.21-4
+- Fix directory permissions to include setgid and sticky bits.
+- Ignore ghost non-regular files.
+- Fix segfault when -u/-g options missing argument.
+  related: rhbz#958184
+
+* Fri Jun 28 2013 Richard Jones <rjones@redhat.com> - 3.21-2
+- Drop supplemental groups when using -g command line option
+  resolves: rhbz#902478
+
+* Fri May 17 2013 Richard Jones <rjones@redhat.com> - 3.21-1
+- Rebase to febootstrap 3.21.
+  resolves: rhbz#958184
+- Remove upstream patch.
+
 * Wed Aug 15 2012 Richard Jones <rjones@redhat.com> - 3.12-2
 - Hotfix: helper: Fix -u and -g options when host uses LDAP or NIS
   resolves: RHBZ#803962

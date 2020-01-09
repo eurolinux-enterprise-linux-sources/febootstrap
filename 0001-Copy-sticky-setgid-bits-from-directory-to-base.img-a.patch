@@ -1,0 +1,47 @@
+From 417439cbbd3fff062a6aedce78dbaf49f6bd7e75 Mon Sep 17 00:00:00 2001
+From: "Richard W.M. Jones" <rjones@redhat.com>
+Date: Mon, 5 Aug 2013 21:18:59 +0100
+Subject: [PATCH] Copy sticky & setgid bits from directory to base.img, and
+ into appliance.
+
+These bits are copied from the original directory mode (from the RPM)
+to the base.img, and from there into the appliance.
+
+           S_ISGID    0002000   set-group-ID bit (see below)
+           S_ISVTX    0001000   sticky bit (see below)
+
+These bits have special significance for some directories (eg. /tmp).
+---
+ helper/ext2.c   | 2 +-
+ src/febootstrap.ml | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/helper/ext2.c b/helper/ext2.c
+index 438713a..2d75fb2 100644
+--- a/helper/ext2.c
++++ b/helper/ext2.c
+@@ -132,7 +132,7 @@ ext2_mkdir (ext2_ino_t dir_ino, const char *dirname, const char *basename,
+ {
+   errcode_t err;
+ 
+-  mode = LINUX_S_IFDIR | (mode & 0777);
++  mode = LINUX_S_IFDIR | (mode & 03777);
+ 
+   /* Does the directory exist?  This is legitimate: we just skip
+    * this case.
+diff --git a/src/febootstrap.ml b/src/febootstrap.ml
+index 251c13e..995f9d8 100644
+--- a/src/febootstrap.ml
++++ b/src/febootstrap.ml
+@@ -379,7 +379,7 @@ let () =
+    *)
+   List.iter (
+     fun (path, { ft_dir = is_dir; ft_mode = mode }, _) ->
+-      if is_dir then chmod (rootdir // path) (mode land 0o777 lor 0o700)
++      if is_dir then chmod (rootdir // path) (mode land 0o3777 lor 0o700)
+   ) (List.rev baseimgfiles);
+ 
+   (* Construct the 'base.img' initramfs.  Feed in the list of filenames
+-- 
+1.8.3.1
+

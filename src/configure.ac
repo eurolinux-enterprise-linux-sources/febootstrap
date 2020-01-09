@@ -1,5 +1,5 @@
 dnl febootstrap configure.ac
-dnl (C) Copyright 2009-2011 Red Hat Inc.
+dnl (C) Copyright 2009-2013 Red Hat Inc.
 dnl
 dnl This program is free software; you can redistribute it and/or modify
 dnl it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@ dnl Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 dnl
 dnl Written by Richard W.M. Jones <rjones@redhat.com>
 
-AC_INIT(febootstrap,3.12)
+AC_INIT([febootstrap],[3.21])
 AM_INIT_AUTOMAKE
 
 dnl Check for basic C environment.
@@ -38,7 +38,12 @@ AC_SYS_LARGEFILE
 gl_INIT
 
 # Define $(SED).
-AC_PROG_SED
+m4_ifdef([AC_PROG_SED],[
+    AC_PROG_SED
+],[
+    dnl ... else hope for the best
+    AC_SUBST([SED], "sed")
+])
 
 # OCaml and ocamlfind are required to compile.
 AC_PROG_OCAML
@@ -89,7 +94,7 @@ AC_CHECK_PROG(PACMAN,[pacman],[pacman],[no])
 dnl Support for gzipped kernel modules.
 AC_CHECK_LIB([z],[gzopen])
 
-dnl Required programs, libraries.
+dnl mke2fs.
 AC_PATH_PROG([MKE2FS],[mke2fs],[no],
              [$PATH$PATH_SEPARATOR/sbin$PATH_SEPARATOR])
 if test "x$MKE2FS" = "xno" ; then
@@ -98,23 +103,34 @@ fi
 AC_DEFINE_UNQUOTED([MKE2FS],["$MKE2FS"],
   [Full path to the mke2fs program.])
 
-old_LIBS="$LIBS"
-AC_CHECK_LIB([com_err],[error_message],[],[
-  AC_MSG_FAILURE([com_err library not found (part of e2fsprogs)])
-])
-LIBS="$old_LIBS"
+dnl RHEL 5 mke2fs needed -T <fs> instead of -t <fs>.  Unhelpfully
+dnl the --help output doesn't mention this, so we have to test it.
+AC_MSG_CHECKING([$MKE2FS -t or -T])
+rm -f conftest.img
+dd if=/dev/zero of=conftest.img bs=1024 count=1024 >&AS_MESSAGE_LOG_FD 2>&1
+if $MKE2FS -t ext2 -F -q conftest.img >&AS_MESSAGE_LOG_FD 2>&1 ; then
+  MKE2FS_T_OPTION=-t
+elif $MKE2FS -T ext2 -F -q conftest.img >&AS_MESSAGE_LOG_FD 2>&1 ; then
+  MKE2FS_T_OPTION=-T
+else
+  AC_MSG_ERROR([$MKE2FS cannot create filesystems])
+fi
+rm conftest.img
+AC_MSG_RESULT([$MKE2FS_T_OPTION])
+AC_DEFINE_UNQUOTED([MKE2FS_T_OPTION],["$MKE2FS_T_OPTION"],
+  [mke2fs option used to specify filesystem type (usually "-t")])
 
+dnl ext2fs, com_err.
+PKG_CHECK_MODULES([EXT2FS], [ext2fs])
+PKG_CHECK_MODULES([COM_ERR], [com_err])
+
+dnl Optional ext2fs_close2 function.
 old_LIBS="$LIBS"
-AC_CHECK_LIB([ext2fs],[ext2fs_file_open2],[],[
-  AC_MSG_FAILURE([libext2fs library not found (part of e2fsprogs)])
-])
+LIBS="$EXT2FS_LIBS $COM_ERR_LIBS"
 AC_CHECK_FUNCS([ext2fs_close2])
 LIBS="$old_LIBS"
 
-AC_CHECK_HEADER([ext2fs/ext2fs.h],[],[
-  AC_MSG_FAILURE([Header <ext2fs/ext2fs.h> not found (part of e2fsprogs)])
-])
-
+dnl GNU awk.
 AC_CHECK_PROG(GAWK,[gawk],[gawk],[no])
 if test "x$GAWK" = "xno" ; then
   AC_MSG_FAILURE([gawk (GNU awk) not found])

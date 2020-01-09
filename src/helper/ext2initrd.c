@@ -1,5 +1,5 @@
 /* febootstrap-supermin-helper reimplementation in C.
- * Copyright (C) 2009-2011 Red Hat Inc.
+ * Copyright (C) 2009-2012 Red Hat Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -67,6 +67,7 @@ static const char *kmods[] = {
   "mbcache.ko*",
   "crc*.ko*",
   "libcrc*.ko*",
+  "ibmvscsic.ko*",
   NULL
 };
 
@@ -93,8 +94,10 @@ ext2_make_initrd (const char *modpath, const char *initrd)
 
   read_module_deps (modpath);
   add_module ("");
-  for (int i = 0; kmods[i] != NULL; ++i) {
-    for (struct module *m = modules; m; m = m->next) {
+  int i;
+  struct module *m;
+  for (i = 0; kmods[i] != NULL; ++i) {
+    for (m = modules; m; m = m->next) {
       char *n = strrchr (m->name, '/');
       if (n)
         n += 1;
@@ -115,6 +118,7 @@ ext2_make_initrd (const char *modpath, const char *initrd)
   FILE *f = fopen (outfile, "w");
   if (f == NULL)
     error (EXIT_FAILURE, errno, "failed to create modules list (%s)", outfile);
+  free (outfile);
   FILE *pp = popen (cmd, "w");
   if (pp == NULL)
     error (EXIT_FAILURE, errno, "failed to create pipe (%s)", cmd);
@@ -175,6 +179,7 @@ read_module_deps (const char *modpath)
 
   char *filename = xasprintf ("%s/modules.dep", modpath);
   FILE *fp = fopen (filename, "r");
+  free (filename);
   if (fp == NULL)
     error (EXIT_FAILURE, errno, "open: %s/modules.dep", modpath);
 
@@ -251,7 +256,8 @@ print_module_load_order (FILE *pipe, FILE *list, struct module *m)
   if (m->visited)
     return;
 
-  for (struct moddep *d = m->deps; d; d = d->next)
+  struct moddep *d;
+  for (d = m->deps; d; d = d->next)
     print_module_load_order (pipe, list, d->dep);
 
   if (m->name[0] == 0)
@@ -268,4 +274,7 @@ print_module_load_order (FILE *pipe, FILE *list, struct module *m)
   fputs (basename, list);
   fputc ('\n', list);
   m->visited = 1;
+
+  if (verbose >= 2)
+    fprintf (stderr, "print_module_load_order: %s %s\n", m->name, basename);
 }
